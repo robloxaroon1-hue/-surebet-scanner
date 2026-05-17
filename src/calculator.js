@@ -1,0 +1,113 @@
+// calculator.js — Matemática de surebets (arbitraje deportivo)
+//
+// Una SUREBET existe cuando la suma de los inversos de las mejores cuotas < 1
+// Fórmula: 1/oddH + 1/oddD + 1/oddA < 1  (3-way)
+//          1/oddH + 1/oddA < 1             (2-way)
+
+// ── Calcular si hay surebet en un set de cuotas ───────────────────────────────
+// odds2way: { home, away }
+// odds3way: { home, draw, away }
+// Devuelve null si no hay arbitraje, o el objeto de surebet si existe
+function checkSurebet(event) {
+  const { bookmakers, teams, sport, startTime } = event;
+
+  // Recolectar la mejor cuota para cada resultado de cada casa
+  const bestHome = getBest(bookmakers, 'home');
+  const bestDraw = getBest(bookmakers, 'draw');
+  const bestAway = getBest(bookmakers, 'away');
+
+  // ── 3-way (con empate) ────────────────────────────────────────────────────
+  if (bestHome && bestDraw && bestAway) {
+    const margin3 = 1/bestHome.odd + 1/bestDraw.odd + 1/bestAway.odd;
+    if (margin3 < 1) {
+      const profit3 = ((1 - margin3) / margin3) * 100;
+      return buildSurebet(3, { home: bestHome, draw: bestDraw, away: bestAway },
+        margin3, profit3, teams, sport, startTime);
+    }
+  }
+
+  // ── 2-way (sin empate, ej. tenis/baloncesto) ──────────────────────────────
+  if (bestHome && bestAway) {
+    const margin2 = 1/bestHome.odd + 1/bestAway.odd;
+    if (margin2 < 1) {
+      const profit2 = ((1 - margin2) / margin2) * 100;
+      return buildSurebet(2, { home: bestHome, away: bestAway },
+        margin2, profit2, teams, sport, startTime);
+    }
+  }
+
+  return null;
+}
+
+// ── Encontrar la mejor cuota para un resultado entre todas las casas ──────────
+function getBest(bookmakers, outcome) {
+  let best = null;
+  for (const bk of bookmakers) {
+    const odd = bk.odds?.[outcome];
+    if (!odd || odd < 1.01) continue;
+    if (!best || odd > best.odd) {
+      best = { odd, bookmaker: bk.bookmaker };
+    }
+  }
+  return best;
+}
+
+// ── Construir objeto surebet con stakes calculados ────────────────────────────
+function buildSurebet(ways, bests, margin, profitPct, teams, sport, startTime) {
+  // Calcular stakes para una apuesta base de 100 unidades
+  const BASE_STAKE = 100;
+  const stakes = {};
+
+  if (ways === 3) {
+    stakes.home  = round((BASE_STAKE * (1/bests.home.odd)) / margin);
+    stakes.draw  = round((BASE_STAKE * (1/bests.draw.odd)) / margin);
+    stakes.away  = round((BASE_STAKE * (1/bests.away.odd)) / margin);
+  } else {
+    stakes.home  = round((BASE_STAKE * (1/bests.home.odd)) / margin);
+    stakes.away  = round((BASE_STAKE * (1/bests.away.odd)) / margin);
+  }
+
+  // Retorno garantizado sin importar el resultado
+  const guaranteed = round(BASE_STAKE / margin);
+
+  return {
+    type: `${ways}-way`,
+    sport,
+    teams,
+    startTime,
+    profitPct: round(profitPct),
+    margin: round(margin * 100),  // como porcentaje
+    guaranteedReturn: guaranteed,
+    bets: buildBets(ways, bests, stakes),
+    foundAt: new Date().toISOString(),
+  };
+}
+
+function buildBets(ways, bests, stakes) {
+  const bets = [
+    { outcome: 'home',  bookmaker: bests.home.bookmaker,  odd: bests.home.odd,  stake: stakes.home },
+    { outcome: 'away',  bookmaker: bests.away.bookmaker,  odd: bests.away.odd,  stake: stakes.away },
+  ];
+  if (ways === 3) {
+    bets.splice(1, 0,
+      { outcome: 'draw', bookmaker: bests.draw.bookmaker, odd: bests.draw.odd, stake: stakes.draw }
+    );
+  }
+  return bets;
+}
+
+// ── Calcular stakes para un monto real ────────────────────────────────────────
+// Útil para cuando el usuario quiere apostar S/. 500 en total
+function calculateRealStakes(surebet, totalAmount) {
+  const base = surebet.bets.reduce((sum, b) => sum + b.stake, 0); // = 100
+  const factor = totalAmount / base;
+  return surebet.bets.map(b => ({
+    ...b,
+    realStake: round(b.stake * factor),
+    realReturn: round(b.stake * factor * b.odd),
+  }));
+}
+
+function round(n) { return Math.round(n * 100) / 100; }
+
+module.exports = { checkSurebet, calculateRealStakes };
