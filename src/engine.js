@@ -1,19 +1,19 @@
 // engine.js — Motor principal del surebet scanner
-// v2: agrega cierre limpio de Playwright al detener el engine
+// v3: removido Playwright/BrowserPool — solo scrapers con API directa
 
 const store      = require('./store');
 const { groupMatchesByEvent }              = require('./matcher');
 const { checkSurebet, calculateRealStakes } = require('./calculator');
-const browserPool = require('./scrapers/BrowserPool'); // ← para cerrar al final
 
-// Importar todos los scrapers
-const StakeScraper  = require('./scrapers/stake');
-const BetanoScraper = require('./scrapers/betano');
+// Scrapers activos (solo API directa, sin browser)
 const {
-  DoradobetScraper, BetsafeScraper, TwentybetScraper,
-  CoolbetScraper,  TinbetScraper,  OlimpoScraper,
+  DoradobetScraper, TwentybetScraper,
+  TinbetScraper,   OlimpoScraper,
 } = require('./scrapers/otros');
 const { ApuestaTotalScraper, RetabetScraper } = require('./scrapers/nuevas');
+
+// Scrapers desactivados temporalmente (requieren Playwright):
+// StakeScraper, BetanoScraper, BetsafeScraper, CoolbetScraper
 
 class SurebetEngine {
   constructor(config = {}) {
@@ -25,12 +25,8 @@ class SurebetEngine {
     };
 
     this.scrapers = [
-      new StakeScraper(),
-      new BetanoScraper(),
       new DoradobetScraper(),
-      new BetsafeScraper(),
       new TwentybetScraper(),
-      new CoolbetScraper(),
       new TinbetScraper(),
       new OlimpoScraper(),
       new ApuestaTotalScraper(),
@@ -58,9 +54,6 @@ class SurebetEngine {
   async stop() {
     this.isRunning = false;
     if (this.interval) clearInterval(this.interval);
-
-    // Cerrar Playwright limpiamente
-    await browserPool.close();
     console.log('\n⏹  Scanner detenido');
   }
 
