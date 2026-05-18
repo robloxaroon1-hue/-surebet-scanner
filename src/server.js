@@ -31,7 +31,7 @@ app.use(express.json());
 // ── Instanciar el motor ───────────────────────────────────────────────────────
 const engine = new SurebetEngine({
   scanIntervalMs: 60 * 1000,   // escaneo cada 60s
-  minProfitPct:   0.5,         // solo surebets ≥ 0.5% de ganancia
+  minProfitPct:   -4,          // mostrar desde -4% para debug (surebets reales son > 0)
   totalStake:     500,         // S/. base para cálculo de stakes
   sports:         ['football'],
 });

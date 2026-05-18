@@ -351,7 +351,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-h
 </div>
 
 <script>
-const RENDER_URL = 'https://surebet-scanner.onrender.com';
+// Auto-detecta: si abres el HTML como archivo local usa localhost, si está en la web usa Render
+const RENDER_URL = (location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://localhost:3000'
+  : 'https://surebet-scanner.onrender.com';
 const VALID_PIN  = '1991';
 const REFRESH_MS = 90000;
 
