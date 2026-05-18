@@ -1,9 +1,8 @@
 // BaseScraper.js — Clase base que todos los scrapers extienden
 // Maneja: reintentos, throttling, logging, formato estándar de salida
-// v2: agrega soporte opcional de Playwright para sitios con protección anti-bot
+// v3: BrowserPool se carga lazy (solo si useBrowser está activo)
 
-const axios  = require('axios');
-const pool   = require('./BrowserPool');
+const axios = require('axios');
 
 class BaseScraper {
   constructor(name, config = {}) {
@@ -13,41 +12,37 @@ class BaseScraper {
       retries:      config.retries      || 2,
       retryDelay:   config.retryDelay   || 2000,
       headers:      config.headers      || {},
-      useBrowser:   config.useBrowser   || false, // ← activa modo Playwright
+      useBrowser:   config.useBrowser   || false,
       ...config,
     };
     this.lastFetch   = 0;
     this.minInterval = config.minInterval || 30000;
 
-    // Sesión robada del browser (cookies + headers reales)
     this._session = null;
     this._sessionExpiry = 0;
-    this._sessionTTL = config.sessionTTL || 10 * 60 * 1000; // 10 min por default
+    this._sessionTTL = config.sessionTTL || 10 * 60 * 1000;
   }
 
-  // ── Método principal que cada scraper debe implementar ────────────────────
+  // Carga BrowserPool solo si se necesita
+  _getPool() {
+    return require('./BrowserPool');
+  }
+
   async fetchOdds() {
     throw new Error(`${this.name}: fetchOdds() no implementado`);
   }
 
-  // ── [NUEVO] Interceptar una API mientras el browser carga el sitio ─────────
-  // siteUrl:        página que abre el browser (ej: 'https://coolbet.pe/...')
-  // interceptMatch: string o RegExp que identifica la URL de la API a capturar
-  // options:        { timeout, waitFor, triggerFn }
-  //
-  // Devuelve: { url, headers, body } de la primera respuesta que coincida
   async browserIntercept(siteUrl, interceptMatch, options = {}) {
-    const timeout  = options.timeout  || 20000;
-    const waitFor  = options.waitFor  || 'networkidle';
+    const timeout = options.timeout || 20000;
+    const waitFor = options.waitFor || 'networkidle';
 
     this.log(`[browser] Abriendo ${siteUrl}`);
-    const page = await pool.newPage(this.config.headers);
+    const page = await this._getPool().newPage(this.config.headers);
 
     try {
       const captured = await new Promise(async (resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Timeout interceptando API')), timeout);
 
-        // Escuchar respuestas de red
         page.on('response', async (response) => {
           const url = response.url();
           const matches = typeof interceptMatch === 'string'
@@ -61,21 +56,15 @@ class BaseScraper {
             const headers = response.headers();
             clearTimeout(timer);
             resolve({ url, headers, body });
-          } catch {
-            // La respuesta coincidió pero no era JSON, ignorar
-          }
+          } catch {}
         });
 
-        // Navegar al sitio
         try {
           await page.goto(siteUrl, { waitUntil: waitFor, timeout });
-          // Si hay función adicional que disparar (click, scroll, etc.)
           if (typeof options.triggerFn === 'function') {
             await options.triggerFn(page);
           }
         } catch (navErr) {
-          // Si es timeout de navegación pero ya capturamos algo, está bien
-          // Si no, rechazar
           clearTimeout(timer);
           reject(navErr);
         }
@@ -87,26 +76,20 @@ class BaseScraper {
     }
   }
 
-  // ── [NUEVO] Robar sesión del browser para usarla en axios ─────────────────
-  // Carga el sitio con Playwright, extrae cookies reales y headers de sesión.
-  // Los reutiliza durante sessionTTL ms antes de renovar.
   async getSession(siteUrl) {
     const now = Date.now();
     if (this._session && now < this._sessionExpiry) return this._session;
 
     this.log('[browser] Renovando sesión...');
-    const page = await pool.newPage();
+    const page = await this._getPool().newPage();
 
     try {
       await page.goto(siteUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-
-      // Esperar un poco para que se carguen cookies de sesión
       await page.waitForTimeout(2000);
 
       const cookies = await page.context().cookies();
       const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
 
-      // Intentar leer token del localStorage si el sitio lo usa
       const token = await page.evaluate(() => {
         return localStorage.getItem('authToken')
           || localStorage.getItem('token')
@@ -124,9 +107,7 @@ class BaseScraper {
     }
   }
 
-  // ── Request HTTP con reintentos (axios) ───────────────────────────────────
   async request(url, options = {}) {
-    // Si useBrowser está activo, enriquecer headers con sesión real
     let sessionHeaders = {};
     if (this.config.useBrowser && this.config.siteUrl) {
       try {
@@ -159,7 +140,6 @@ class BaseScraper {
         const status = err.response?.status;
         this.log(`Intento ${attempt} falló (${status || err.code}). Reintentando...`);
 
-        // Si es 401/403, forzar renovación de sesión en el próximo intento
         if ((status === 401 || status === 403) && this.config.useBrowser) {
           this._sessionExpiry = 0;
         }
@@ -169,7 +149,6 @@ class BaseScraper {
     }
   }
 
-  // ── POST JSON ─────────────────────────────────────────────────────────────
   async post(url, body, options = {}) {
     return this.request(url, {
       method: 'POST',
@@ -179,12 +158,10 @@ class BaseScraper {
     });
   }
 
-  // ── GraphQL ───────────────────────────────────────────────────────────────
   async graphql(url, query, variables = {}) {
     return this.post(url, { query, variables });
   }
 
-  // ── Headers por defecto (anti-detección básica) ───────────────────────────
   defaultHeaders() {
     return {
       'User-Agent':       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -200,7 +177,6 @@ class BaseScraper {
     };
   }
 
-  // ── Throttle ──────────────────────────────────────────────────────────────
   async throttle() {
     const now     = Date.now();
     const elapsed = now - this.lastFetch;
@@ -208,7 +184,6 @@ class BaseScraper {
     this.lastFetch = Date.now();
   }
 
-  // ── Normalizar partido ────────────────────────────────────────────────────
   normalizeMatch({ home, away, sport, startTime, odds }) {
     return {
       bookmaker: this.name,
@@ -229,7 +204,6 @@ class BaseScraper {
     return isNaN(n) || n < 1.01 ? null : n;
   }
 
-  // ── run() con throttle y manejo de error ──────────────────────────────────
   async run() {
     await this.throttle();
     this.log('Iniciando fetch...');
