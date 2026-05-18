@@ -6,7 +6,7 @@ const SurebetEngine = require('./engine');
 // ── Configuración ─────────────────────────────────────────────────────────────
 const engine = new SurebetEngine({
   scanIntervalMs: 60 * 1000,   // escanear cada 60 segundos
-  minProfitPct: 0.5,           // solo mostrar surebets con >0.5% de ganancia
+  minProfitPct: -4,           // mostrar desde -4% (para debug) hasta el máximo posible
   totalStake: 100,             // monto base en S/. para calcular apuestas
   sports: ['football'],
 });

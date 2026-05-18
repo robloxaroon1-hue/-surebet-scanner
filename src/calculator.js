@@ -14,14 +14,18 @@ function checkSurebet(event) {
   const bestDraw = getBest(bookmakers, 'draw');
   const bestAway = getBest(bookmakers, 'away');
 
+  // ── Umbral: solo ignorar combinaciones con pérdida peor que -4% ─────────
+  // profitPct = ((1 - margin) / margin) * 100
+  // -4% de profit → margin = 1 / (1 - 0.04) ≈ 1.0417
+  const MIN_MARGIN_ALLOWED = 1.0417;
+
   // ── 3-way (con empate) ────────────────────────────────────────────────────
   if (bestHome && bestDraw && bestAway) {
-    // Las 3 casas deben ser distintas entre sí
     const books3 = [bestHome.bookmaker, bestDraw.bookmaker, bestAway.bookmaker];
     const unique3 = new Set(books3);
-    if (unique3.size >= 2) {  // al menos 2 casas distintas en la combinación
+    if (unique3.size >= 2) {
       const margin3 = 1/bestHome.odd + 1/bestDraw.odd + 1/bestAway.odd;
-      if (margin3 < 1) {
+      if (margin3 <= MIN_MARGIN_ALLOWED) {
         const profit3 = ((1 - margin3) / margin3) * 100;
         return buildSurebet(3, { home: bestHome, draw: bestDraw, away: bestAway },
           margin3, profit3, teams, sport, startTime);
@@ -30,11 +34,10 @@ function checkSurebet(event) {
   }
 
   // ── 2-way (solo para deportes sin empate: tenis, baloncesto, etc.) ────────
-  // Para fútbol NO aplicar 2-way — siempre hay posibilidad de empate
   if (sport !== 'football' && bestHome && bestAway) {
     if (bestHome.bookmaker !== bestAway.bookmaker) {
       const margin2 = 1/bestHome.odd + 1/bestAway.odd;
-      if (margin2 < 1) {
+      if (margin2 <= MIN_MARGIN_ALLOWED) {
         const profit2 = ((1 - margin2) / margin2) * 100;
         return buildSurebet(2, { home: bestHome, away: bestAway },
           margin2, profit2, teams, sport, startTime);

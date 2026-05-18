@@ -19,7 +19,7 @@ class SurebetEngine {
   constructor(config = {}) {
     this.config = {
       scanIntervalMs: config.scanIntervalMs || 60000,
-      minProfitPct:   config.minProfitPct   || 0.5,
+      minProfitPct:   config.minProfitPct   ?? -4,
       totalStake:     config.totalStake     || 100,
       sports:         config.sports         || ['football'],
     };
