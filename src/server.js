@@ -14,6 +14,7 @@
 
 const express = require('express');
 const cors    = require('cors');
+const path    = require('path');
 const SurebetEngine = require('./engine');
 const store = require('./store');
 
@@ -28,10 +29,16 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ── Instanciar el motor ───────────────────────────────────────────────────────
+// ── Servir el index.html estático desde la raíz del proyecto ─────────────────
+app.use(express.static(path.join(__dirname, '..')));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
+
+
 const engine = new SurebetEngine({
   scanIntervalMs: 60 * 1000,   // escaneo cada 60s
-  minProfitPct:   -4,          // mostrar desde -4% para debug (surebets reales son > 0)
+  minProfitPct:   -4,          // mostrar desde -4% para debug
   totalStake:     500,         // S/. base para cálculo de stakes
   sports:         ['football'],
 });
