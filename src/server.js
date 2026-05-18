@@ -15,6 +15,7 @@
 const express = require('express');
 const cors    = require('cors');
 const SurebetEngine = require('./engine');
+const store = require('./store');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -106,7 +107,6 @@ app.get('/api/status', (req, res) => {
 
 // GET /api/odds — todos los partidos con cuotas (del store en memoria)
 app.get('/api/odds', (req, res) => {
-  const store = require('./store');
   const allMatches = store.getAll ? store.getAll() : [];
 
   // Agrupar por partido para mostrar cuotas de todas las casas
